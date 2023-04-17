@@ -27,11 +27,11 @@ if [[ -o interactive ]]; then # Check stdin is a tty
   # the last command.
   fzh_add_precmd_hook() {
     if [ -n "$FZH_DEBUG" ]; then
-      print -u2 Exit status: $?
-      print -u2 cmd: $FZH_LAST_CMD
+      print -u2 Exit code: $?
+      print -u2 Cmd: $FZH_LAST_CMD
     fi
 
-    $FZH_PATH add "{$?}:{$FZH_LAST_CMD}"
+    $FZH_PATH add "$?:$FZH_LAST_CMD"
   }
   if [[ -z $precmd_functions ]] || [[ "${precmd_functions[(ie)fzh_add_precmd_hook]}" -gt ${#precmd_functions} ]]; then
     precmd_functions+=(fzh_add_precmd_hook)
@@ -44,7 +44,13 @@ if [[ -o interactive ]]; then # Check stdin is a tty
   if [[ $- =~ .*i.* ]]; then # Check it's an interactive shell
     fzh-widget() {
       () {
-        fzh
+        # `BUFFER` is used to initialize with the contents of the terminal.
+
+        echo "$(fzh search uno)"
+
+        # selection=$($FZH_PATH search \""${BUFFER}"\")
+        # eval "$selection"
+        # eval "$($FZH_PATH search \"${BUFFER}\")"
       }
     }
     zle -N fzh-widget

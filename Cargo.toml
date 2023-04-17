@@ -10,5 +10,8 @@ console = "0.15.5"
 dialoguer = { version = "0.10.4", features = ["fuzzy-select"] }
 fuzzy-matcher = "0.3.7"
 home = "0.5.4"
+indoc = "2.0.1"
+lazy_static = "1.4.0"
+regex = "1.7.3"
 tantivy = "0.19.2"
 ulid = "1.0.0"
