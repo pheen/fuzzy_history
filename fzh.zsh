@@ -41,21 +41,14 @@ if [[ -o interactive ]]; then # Check stdin is a tty
 
   ##  Keybinds  ###############################################################
 
-  if [[ $- =~ .*i.* ]]; then # Check it's an interactive shell
-    fzh-widget() {
-      () {
-        # `BUFFER` is used to initialize with the contents of the terminal.
-
-        echo "$(fzh search uno)"
-
-        # selection=$($FZH_PATH search \""${BUFFER}"\")
-        # eval "$selection"
-        # eval "$($FZH_PATH search \"${BUFFER}\")"
-      }
+  if [[ $- =~ .*i.* ]]; then
+    function fzh-widget() {
+      current_buffer=$BUFFER
+      BUFFER=$(<$TTY /Users/joelkorpela/dev/fuzzy_history/target/debug/fuzzy_history search $current_buffer)
+      zle .accept-line
     }
-    zle -N fzh-widget
 
-    bindkey '^R' fzh-widget
+    zle -N mywidget fzh-widget
+    bindkey "^R" mywidget
   fi
-
 fi
