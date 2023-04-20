@@ -43,9 +43,8 @@ if [[ -o interactive ]]; then # Check stdin is a tty
 
   if [[ $- =~ .*i.* ]]; then
     function fzh-widget() {
-      zle -I
-      current_buffer=$BUFFER
-      BUFFER=$(/Users/joelkorpela/dev/fuzzy_history/target/debug/fuzzy_history search $TTY $current_buffer </dev/tty)
+      zle -I # hide the prompt
+      BUFFER=$(/Users/joelkorpela/dev/fuzzy_history/target/debug/fuzzy_history search $TTY $BUFFER </dev/tty)
       zle .accept-line
     }
 
