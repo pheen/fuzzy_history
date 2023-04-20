@@ -15,7 +15,7 @@ use home::home_dir;
 use tantivy::collector::{Count, TopDocs};
 use tantivy::directory::MmapDirectory;
 use tantivy::query::{BooleanQuery, Occur, QueryParser, RegexQuery, TermQuery};
-use tantivy::Directory;
+use tantivy::{Directory, IndexSettings, IndexSortByField, Order};
 use tantivy::Index;
 use tantivy::ReloadPolicy;
 use tantivy::{schema::*, DocId, Score, SegmentReader};
@@ -26,6 +26,7 @@ use std::env;
 use ulid::Ulid;
 
 use indoc::concatdoc;
+use fasthash::city;
 
 #[macro_use]
 extern crate lazy_static;
@@ -108,8 +109,9 @@ fn build_schema() -> Schema {
     let mut schema_builder = Schema::builder();
 
     schema_builder.add_u64_field("id", FAST | INDEXED | STORED);
+    schema_builder.add_u64_field("timestamp", FAST | INDEXED | STORED);
     schema_builder.add_u64_field("times_selected", FAST | INDEXED | STORED);
-    schema_builder.add_u64_field("exit_code", INDEXED | STORED);
+    schema_builder.add_u64_field("exit_code", FAST | INDEXED | STORED);
     schema_builder.add_text_field(
         "directory",
         TextOptions::default()
@@ -139,6 +141,10 @@ fn build_index_path() -> std::path::PathBuf {
 }
 
 fn index_command(text: String) -> std::io::Result<()> {
+    if text.trim().is_empty() {
+        return Ok(())
+    }
+
     let parts: Vec<&str> = text.trim().split(":").collect();
     let exit_code = parts.get(0).unwrap().parse::<u64>().unwrap();
     let command_input = parts.get(1).unwrap();
@@ -146,36 +152,83 @@ fn index_command(text: String) -> std::io::Result<()> {
 
     let schema = build_schema();
 
-    fs::create_dir_all(&index_path).unwrap();
+    if !index_path.exists() {
+        fs::create_dir_all(&index_path).unwrap();
+    }
 
     let directory: Box<dyn Directory> = Box::new(MmapDirectory::open(index_path).unwrap());
-    let index = Index::open_or_create(directory, schema.clone()).unwrap();
 
-    index.settings();
+    let settings = IndexSettings {
+        sort_by_field: Some(IndexSortByField {
+            field: "timestamp".to_string(),
+            order: Order::Desc,
+        }),
+        ..Default::default()
+    };
+    let mut index_builder = Index::builder().schema(schema.clone());
+    index_builder = index_builder.settings(settings);
+    let index = index_builder.open_or_create(directory).unwrap();
 
-    let mut index_writer = index.writer(50_000_000).unwrap();
+
+    // let index = Index::open_or_create(directory, schema.clone()).unwrap();
+
+    let mut index_writer = index.writer(30_000_000).unwrap();
 
     let id_field = schema.get_field("id").unwrap();
+    let timestamp_field = schema.get_field("timestamp").unwrap();
     let times_selected_field = schema.get_field("times_selected").unwrap();
     let exit_code_field = schema.get_field("exit_code").unwrap();
-    let directory_field = schema.get_field("directory").unwrap();
     let command_field = schema.get_field("command").unwrap();
+    let directory_field = schema.get_field("directory").unwrap();
 
     let mut command_doc = Document::default();
 
-    command_doc.add_u64(id_field, Ulid::new().timestamp_ms());
-    command_doc.add_u64(times_selected_field, 0);
+    let dir_name = std::env::current_dir().unwrap();
+    let command_directory = dir_name.to_str().unwrap();
+    let combined_string = format!("{} {}", command_directory, command_input);
+    let id_string = combined_string.as_str();
+    let assigned_id = city::hash64(id_string);
+
+
+    // start
+    let reader = index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::OnCommit)
+        .try_into().unwrap();
+
+    let searcher = reader.searcher();
+
+    let query_parser = QueryParser::for_index(&index, vec![id_field]);
+
+    // oof, whatever moving on.
+    let query = query_parser.parse_query(assigned_id.to_string().as_str()).unwrap();
+    let top_docs = searcher.search(&query, &TopDocs::with_limit(1)).unwrap();
+
+    let mut current_times_selected = 0;
+
+    for (_score, doc_address) in top_docs {
+        let retrieved_doc = searcher.doc(doc_address).unwrap();
+
+        current_times_selected = retrieved_doc
+            .get_first(times_selected_field)
+            .unwrap()
+            .as_u64()
+            .unwrap();
+
+        // println!("{}", schema.to_json(&retrieved_doc));
+    }
+
+    let times_selected = current_times_selected + 1;
+    //end
+
+    command_doc.add_u64(id_field, assigned_id);
+    command_doc.add_u64(timestamp_field, Ulid::new().timestamp_ms());
+    command_doc.add_u64(times_selected_field, times_selected);
     command_doc.add_u64(exit_code_field, exit_code);
-    command_doc.add_text(
-        directory_field,
-        std::env::current_dir().unwrap().to_str().unwrap(),
-    );
     command_doc.add_text(command_field, command_input);
+    command_doc.add_text(directory_field, command_directory);
 
-    println!("{:#?}", "Indexing:");
-    println!("{:#?}", command_doc);
-
-    index_writer.add_document(command_doc);
+    index_writer.add_document(command_doc).unwrap();
     index_writer.commit().unwrap();
 
     Ok(())
@@ -196,7 +249,18 @@ fn search_command(text: String) -> Vec<String> {
     let schema = build_schema();
     let index_path = build_index_path();
     let directory: Box<dyn Directory> = Box::new(MmapDirectory::open(index_path).unwrap());
-    let index = Index::open_or_create(directory, schema.clone()).unwrap();
+
+    let settings = IndexSettings {
+        sort_by_field: Some(IndexSortByField {
+            field: "timestamp".to_string(),
+            order: Order::Desc,
+        }),
+        ..Default::default()
+    };
+    let mut index_builder = Index::builder().schema(schema.clone());
+    index_builder = index_builder.settings(settings);
+    let index = index_builder.open_or_create(directory).unwrap();
+    // let index = Index::open_or_create(directory, schema.clone()).unwrap();
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::OnCommit)
@@ -205,6 +269,7 @@ fn search_command(text: String) -> Vec<String> {
 
     let searcher = reader.searcher();
     let id_field = schema.get_field("id").unwrap();
+    let timestamp_field = schema.get_field("timestamp").unwrap();
     let times_selected_field = schema.get_field("times_selected").unwrap();
     let exit_code_field = schema.get_field("exit_code").unwrap();
     let directory_field = schema.get_field("directory").unwrap();
@@ -216,7 +281,8 @@ fn search_command(text: String) -> Vec<String> {
     );
     let directory_query = TermQuery::new(directory_term, IndexRecordOption::Basic);
 
-    let text_parts: Vec<&str> = text.split(" ").collect();
+    // let text_parts: Vec<&str> = text.split(" ").collect();
+    let text_parts: Vec<String> = text.chars().map(|c| c.to_string()).collect();
     let pattern = ["", text_parts.join(".*").as_str(), ""].join(".*");
     let command_query = RegexQuery::from_pattern(pattern.as_str(), command_field).unwrap();
 
@@ -228,21 +294,40 @@ fn search_command(text: String) -> Vec<String> {
     let one_month_ms: u64 = 2629800000;
     let current_ms = Ulid::new().timestamp_ms();
 
-    let (top_docs, count) = searcher
+    let (top_docs, _count) = searcher
         .search(
             &query,
             &(
                 TopDocs::with_limit(10).tweak_score(move |segment_reader: &SegmentReader| {
-                    let id_reader = segment_reader.fast_fields().u64(id_field).unwrap();
+                    let timestamp_reader = segment_reader.fast_fields().u64(timestamp_field).unwrap();
+                    let times_selected_reader = segment_reader.fast_fields().u64(times_selected_field).unwrap();
+                    let exit_code_reader = segment_reader.fast_fields().u64(exit_code_field).unwrap();
 
                     move |doc: DocId, original_score: Score| {
-                        let ms_diff = current_ms - id_reader.get_val(0);
+                        // timestamp
+                        let ms_diff = current_ms - timestamp_reader.get_val(0);
 
                         let decay: f64 = ms_diff as f64 / one_month_ms as f64;
-                        let id_score_scaling = 1 as f64 - decay;
-                        let id_score_boost = 1 as f32 * id_score_scaling as f32;
+                        let timestamp_score_scaling = 1 as f64 - decay;
+                        let timestamp_score_boost = 1 as f32 * timestamp_score_scaling as f32;
 
-                        id_score_boost + original_score
+                        // times selected
+                        let times_selected = times_selected_reader.get_val(0);
+                        let mut time_selected_boost = times_selected as f32 / 100.0;
+
+                        if time_selected_boost > 1.0 {
+                            time_selected_boost = 1.0;
+                        }
+
+                        // exit code boost
+                        let exit_code = exit_code_reader.get_val(0);
+                        let mut exit_code_boost = 0.0 as f32;
+
+                        if exit_code == 0 {
+                            exit_code_boost = 1.0;
+                        }
+
+                        timestamp_score_boost + time_selected_boost + exit_code_boost + original_score
                     }
                 }),
                 Count,

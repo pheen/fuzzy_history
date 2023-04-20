@@ -22,13 +22,13 @@ if [[ -o interactive ]]; then # Check stdin is a tty
   add-zsh-hook zshaddhistory fzh_add_history_hook
 
   # `precmd_functions` are ran just before the prompt is shown. You can also be
-  # though of as being just after the last command, which allows access to the
+  # thought of as being just after the last command, which allows access to the
   # exit status. Funny enough, this is the only way to access the exit status of
-  # the last command.
+  # the last command that I can find.
   fzh_add_precmd_hook() {
     if [ -n "$FZH_DEBUG" ]; then
-      print -u2 Exit code: $?
-      print -u2 Cmd: $FZH_LAST_CMD
+      print -u2 exit_code: $?
+      print -u2 command: $FZH_LAST_CMD
     fi
 
     $FZH_PATH add "$?:$FZH_LAST_CMD"

@@ -9,6 +9,7 @@ edition = "2021"
 backtrace-on-stack-overflow = "0.3.0"
 console = { path = "../crates/console" }
 dialoguer = { version = "0.10.4", features = ["fuzzy-select"] }
+fasthash = "0.4.0"
 fuzzy-matcher = "0.3.7"
 home = "0.5.4"
 indoc = "2.0.1"
