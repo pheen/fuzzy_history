@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-console = "0.15.5"
+backtrace-on-stack-overflow = "0.3.0"
+console = { path = "../crates/console" }
 dialoguer = { version = "0.10.4", features = ["fuzzy-select"] }
 fuzzy-matcher = "0.3.7"
 home = "0.5.4"

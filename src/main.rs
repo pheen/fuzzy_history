@@ -55,7 +55,11 @@ fn indexable_command(text: &str) -> bool {
     RE.is_match(text)
 }
 
+use backtrace_on_stack_overflow;
+
 fn main() -> std::io::Result<()> {
+    unsafe { backtrace_on_stack_overflow::enable() };
+
     let cmd = env::args().nth(1).unwrap_or("".to_string());
 
     match cmd.as_str() {
@@ -71,9 +75,10 @@ fn main() -> std::io::Result<()> {
             }
         }
         "search" => {
-            let initial_input = env::args().nth(2).unwrap_or("".to_string());
+            let fd_path = env::args().nth(2).unwrap_or("".to_string());
+            let initial_input = env::args().nth(3).unwrap_or("".to_string());
 
-            if let Ok(selection) = interactive_search_command(initial_input) {
+            if let Ok(selection) = interactive_search_command(fd_path, initial_input) {
                 // This is captured by `fzh-widget` in fzh.zsh then executed as a
                 // shell command.
                 println!("{}", selection);
@@ -176,13 +181,13 @@ fn index_command(text: String) -> std::io::Result<()> {
     Ok(())
 }
 
-fn interactive_search_command(text: String) -> std::io::Result<String> {
+fn interactive_search_command(fd_path: String, text: String) -> std::io::Result<String> {
     let results = search_command(text.clone());
     let selection = FuzzyHistorySelect::with_theme(&ColorfulTheme::default())
         .with_initial_text(text)
         .items(&results)
         .default(0)
-        .interact_on_opt(&Term::stderr());
+        .interact_on_opt(fd_path, &Term::stderr());
 
     selection
 }
@@ -385,8 +390,8 @@ impl FuzzyHistorySelect<'_> {
     /// The dialog is rendered on stderr.
     /// Result contains `Some(index)` if user hit 'Enter' or `None` if user cancelled with 'Esc' or 'q'.
     #[inline]
-    pub fn interact_opt(&mut self) -> io::Result<String> {
-        self.interact_on_opt(&Term::stderr())
+    pub fn interact_opt(&mut self, fd_path: String) -> io::Result<String> {
+        self.interact_on_opt(fd_path, &Term::stderr())
     }
 
     // /// Like `interact` but allows a specific terminal to be set.
@@ -398,12 +403,12 @@ impl FuzzyHistorySelect<'_> {
 
     /// Like `interact` but allows a specific terminal to be set.
     #[inline]
-    pub fn interact_on_opt(&mut self, term: &Term) -> io::Result<String> {
-        self._interact_on(term, true)
+    pub fn interact_on_opt(&mut self, fd_path: String, term: &Term) -> io::Result<String> {
+        self._interact_on(fd_path, term, true)
     }
 
     /// Like `interact` but allows a specific terminal to be set.
-    fn _interact_on(&mut self, term: &Term, allow_quit: bool) -> io::Result<String> {
+    fn _interact_on(&mut self, fd_path: String, term: &Term, allow_quit: bool) -> io::Result<String> {
         // Place cursor at the end of the search term
         let mut position = self.initial_text.len();
         let mut search_term = self.initial_text.to_owned();
@@ -454,8 +459,9 @@ impl FuzzyHistorySelect<'_> {
             }
             term.flush()?;
 
-            match (term.read_key()?, sel) {
+            match (term.read_raw_key(fd_path.clone())?, sel) {
                 (Key::Escape, _) if allow_quit => {
+                    // println!("{:#?}", "Escape");
                     if self.clear {
                         render.clear()?;
                         term.flush()?;
@@ -464,6 +470,7 @@ impl FuzzyHistorySelect<'_> {
                     return Err(io::Error::new(io::ErrorKind::Interrupted, ""));
                 }
                 (Key::ArrowUp | Key::BackTab, _) if !self.items.is_empty() => {
+                    // println!("{:#?}", "ArrowUp");
                     if sel == Some(0) {
                         starting_row = self.items.len().max(visible_term_rows) - visible_term_rows;
                     } else if sel == Some(starting_row) {
@@ -479,6 +486,7 @@ impl FuzzyHistorySelect<'_> {
                     term.flush()?;
                 }
                 (Key::ArrowDown | Key::Tab, _) if !self.items.is_empty() => {
+                    // println!("{:#?}", "ArrowDown");
                     sel = match sel {
                         None => Some(0),
                         Some(sel) => Some((sel as u64 + 1).rem(self.items.len() as u64) as usize),
@@ -491,14 +499,17 @@ impl FuzzyHistorySelect<'_> {
                     term.flush()?;
                 }
                 (Key::ArrowLeft, _) if position > 0 => {
+                    // println!("{:#?}", "ArrowLeft");
                     position -= 1;
                     term.flush()?;
                 }
                 (Key::ArrowRight, _) if position < search_term.len() => {
+                    // println!("{:#?}", "ArrowRight");
                     position += 1;
                     term.flush()?;
                 }
                 (Key::Enter, Some(sel)) if !self.items.is_empty() => {
+                    // println!("{:#?}", "Enter");
                     if self.clear {
                         render.clear()?;
                     }
@@ -507,24 +518,86 @@ impl FuzzyHistorySelect<'_> {
                     return Ok(self.items[sel].clone());
                 }
                 (Key::Backspace, _) if position > 0 => {
-                    position -= 1;
-                    search_term.remove(position);
+                    // println!("{:#?}", "Backspace");
+                    if search_term.is_char_boundary(position) {
+                        position -= 1;
+                        search_term.remove(position);
 
-                    self.set_items_from_search(search_term.clone());
-                    term.flush()?;
+                        self.set_items_from_search(search_term.clone());
+                        term.flush()?;
+                    }
                 }
                 (Key::Char(chr), _) if !chr.is_ascii_control() => {
-                    search_term.insert(position, chr);
-                    position += 1;
+                    // println!("char: {:#?}", chr);
 
-                    self.set_items_from_search(search_term.clone());
-                    term.flush()?;
+                    if search_term.is_char_boundary(position) {
+                        search_term.insert(position, chr);
+                        position += 1;
 
-                    sel = Some(0);
-                    starting_row = 0;
+                        self.set_items_from_search(search_term.clone());
+                        term.flush()?;
+
+                        sel = Some(0);
+                        starting_row = 0;
+
+
+                        // match chr.to_string().as_str() {
+                        //     "A" => {
+                        //         // println!("{:#?}", "ArrowUp");
+                        //         if sel == Some(0) {
+                        //             starting_row = self.items.len().max(visible_term_rows) - visible_term_rows;
+                        //         } else if sel == Some(starting_row) {
+                        //             starting_row -= 1;
+                        //         }
+                        //         sel = match sel {
+                        //             None => Some(self.items.len() - 1),
+                        //             Some(sel) => Some(
+                        //                 ((sel as i64 - 1 + self.items.len() as i64) % (self.items.len() as i64))
+                        //                     as usize,
+                        //             ),
+                        //         };
+                        //         term.flush()?;
+
+                        //     },
+                        //     "B" => {
+                        //         // println!("{:#?}", "ArrowDown");
+                        //         sel = match sel {
+                        //             None => Some(0),
+                        //             Some(sel) => Some((sel as u64 + 1).rem(self.items.len() as u64) as usize),
+                        //         };
+                        //         if sel == Some(visible_term_rows + starting_row) {
+                        //             starting_row += 1;
+                        //         } else if sel == Some(0) {
+                        //             starting_row = 0;
+                        //         }
+                        //         term.flush()?;
+                        //     },
+                        //     "C" => {
+                        //         position += 1;
+                        //         term.flush()?;
+                        //     },
+                        //     "D" => {
+                        //         // println!("{:#?}", "ArrowLeft");
+                        //         position -= 1;
+                        //         term.flush()?;
+                        //     },
+                        //     _ => {
+                        //         search_term.insert(position, chr);
+                        //         position += 1;
+
+                        //         self.set_items_from_search(search_term.clone());
+                        //         term.flush()?;
+
+                        //         sel = Some(0);
+                        //         starting_row = 0;
+                        //     },
+                        // }
+                    }
                 }
 
-                _ => {}
+                _ => {
+                    // println!("{:#?}", "Default");
+                }
             }
 
             render.clear_preserve_prompt(&size_vec)?;
