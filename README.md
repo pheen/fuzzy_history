@@ -1,5 +1,4 @@
 <h1 align="center">
-  <br>
   <img src="https://user-images.githubusercontent.com/1145873/233561842-e836ba15-d6f4-458b-b4cd-3e7465885ff4.png" width="25%" >
   <br>
   $\textcolor{inherit}{\textsf{F}}\textcolor{grey}{\textsf{u}}\textcolor{inherit}{\textsf{z}}\textcolor{grey}{\textsf{zy}}$ $\textcolor{inherit}{\textsf{H}}\textcolor{grey}{\textsf{istory}}$
