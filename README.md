@@ -1,6 +1,8 @@
 # **F**u**z**zy **H**istory
 
-Fzh is a simple shell history search engine. Fuzzy find with ordering taking into account the current directory, exit status, datetime, and number of times ran for a command.
+Fzh is a simple shell history search engine that replaces `ctrl-r`. Fuzzy find with ordering taking into account the current directory, exit status, datetime, and number of times ran for a command.
+
+Regular shell history is not affected as the search index is kept entirely separate.
 
 ## Table of Contents
 
@@ -12,12 +14,22 @@ Fzh is a simple shell history search engine. Fuzzy find with ordering taking int
 
 ## Installation
 
-To install Fzh, you can download the binary from the [Github Releases page](https://github.com/username/fzh/releases) and move it to `/usr/local/bin/`.
+1. To install Fzh, you can download the binary from the [Github Releases page](https://github.com/username/fzh/releases) and move it to `/usr/local/bin/`.
 
 ```
 $ cd ~/Downloads
 $ mv fzh /usr/local/bin/
 ```
+
+2. Add the initializer to `~/.zshrc`.
+
+```
+# Setup Fzh keybinds and event hooks. Removing this will
+# restore previous `ctrl+r` behaviour.
+eval "$(fzh init zsh)"
+```
+
+3. Restart your terminal or run `. ~/.zshrc`.
 
 ## Usage
 
@@ -29,7 +41,7 @@ $ fzh import zsh
 
 This will index your Zsh command history and store it in `~/.fzh`. Only Zsh is currently supported.
 
-Perform searches with the keybind `^R`.
+Search with the keybind `ctrl-r` (`^R`).
 
 ## Commands
 

@@ -384,7 +384,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "fuzzy_history"
+name = "fzh"
 version = "0.1.0"
 dependencies = [
  "backtrace-on-stack-overflow",
