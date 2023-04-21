@@ -10,7 +10,7 @@ Regular shell history is not affected as the search index is kept entirely separ
 - [Usage](#usage)
 - [Commands](#commands)
 - [Developer Commands](#developer-options)
-- [Todo](#todo)
+- [Remaining Work](#remaining-work)
 
 ## Installation
 
@@ -45,16 +45,18 @@ Search with the keybind `ctrl-r` (`^R`).
 
 ## Commands
 
-- `import <shell> [<path>]`: Index command history for a shell (path defaults to `~/.zsh_history`)
-- `delete_index`: Remove all indexed command history
+- `import <shell> [<path>]` Index command history for a shell (path defaults to `~/.zsh_history`)
+- `init <shell>` Prints the init script (source with `eval \"$(fzh init zsh)\"`)
+- `delete_index` Remove all indexed command history
 
 ## Developer Commands
 
 Fzh includes a few developer options that can be used to add commands to the index manually or start the search client manually:
 
-- `search <text>`: Start a search client, the same as what's invoked from the keybind `^R`.
-- `add <exit_code>:<text>`: Write a command to the index.
+- `search <text>` Start a search client, the same as what's invoked from the keybind `^R`.
+- `add <exit_code>:<text>` Write a command to the index.
 
-## Todo
+## Remaining Work
 
-- handle signals like cmd+backspace, cmd+left_arrow, etc.
+- [ ] Handle signals like cmd+backspace, cmd+left_arrow, etc.
+- [ ] Eat cake!

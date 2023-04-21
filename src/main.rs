@@ -36,6 +36,7 @@ const HELP: &str = concatdoc! {"
 
     Commands:
         import <shell> [<path>]   # Index command history for a shell (path defaults to ~/.zsh_history)
+        init <shell>              # Prints the init script (source with `eval \"$(fzh init zsh)\"`)
         delete_index              # Remove all indexed command history
 
     Notes:
@@ -140,6 +141,17 @@ fn main() -> std::io::Result<()> {
             let index_path = build_index_path();
             fs::remove_dir_all(&index_path).unwrap();
             println!("Deleted {:#?}", index_path);
+        }
+        "init" => {
+            let shell_type = env::args().nth(2).unwrap_or("".to_string());
+
+            if shell_type != "zsh" {
+                println!("A valid shell type is required. Only \"zsh\" is currently supported.");
+                std::process::exit(1);
+            }
+
+            let script = include_str!("../fzh.zsh");
+            print!("{}", script);
         }
         _ => {
             print!("{}", HELP);
