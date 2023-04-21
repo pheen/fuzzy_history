@@ -1,4 +1,10 @@
-# **F**u**z**zy **H**istory
+<h1 align="center">
+  <br>
+  <img src="https://user-images.githubusercontent.com/1145873/233561842-e836ba15-d6f4-458b-b4cd-3e7465885ff4.png" width="25%" >
+  <br>
+  $\textcolor{inherit}{\textsf{F}}\textcolor{grey}{\textsf{u}}\textcolor{inherit}{\textsf{z}}\textcolor{grey}{\textsf{zy}}$ $\textcolor{inherit}{\textsf{H}}\textcolor{grey}{\textsf{istory}}$
+  <br>
+</h1>
 
 Fzh is a simple shell history search engine that replaces `ctrl-r`. Fuzzy find with ordering taking into account the current directory, exit status, datetime, and number of times ran for a command.
 
@@ -9,12 +15,12 @@ Regular shell history is not affected as the search index is kept entirely separ
 - [Installation](#installation)
 - [Usage](#usage)
 - [Commands](#commands)
-- [Developer Commands](#developer-options)
+- [Developer Commands](#developer-commands)
 - [Remaining Work](#remaining-work)
 
 ## Installation
 
-1. To install Fzh, you can download the binary from the [Github Releases page](https://github.com/username/fzh/releases) and move it to `/usr/local/bin/`.
+1. To install Fzh, you can download the binary from the [Github Releases page](https://github.com/pheen/fzh/releases) and move it to `/usr/local/bin/`.
 
 ```
 $ cd ~/Downloads
