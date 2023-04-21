@@ -41,11 +41,21 @@ if [[ -o interactive ]]; then # Check stdin is a tty
 
   ##  Keybinds  ###############################################################
 
-  if [[ $- =~ .*i.* ]]; then
+  if [[ $- =~ .*i.* ]]; then # Check if the shell is interactive
     function fzh-widget() {
-      zle -I # hide the prompt
-      BUFFER=$(/Users/joelkorpela/dev/fuzzy_history/target/debug/fuzzy_history search $TTY $BUFFER </dev/tty)
-      zle .accept-line
+      # This echo causes the prompt to be hidden before running fzh. Using `zle
+      # -I` works too, but it causes an additional prompt to be shown when
+      # accepting a command.
+      echo ""
+
+      local result=$($FZH_PATH search $TTY $BUFFER </dev/tty)
+
+      if [[ -n ${result//[[:space:]]/} ]]; then # strip whitespace and check length is >0
+        BUFFER=$result
+        zle .accept-line
+      else
+        zle .reset-prompt
+      fi
     }
 
     zle -N mywidget fzh-widget
