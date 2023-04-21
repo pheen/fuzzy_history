@@ -32,31 +32,29 @@ use fasthash::city;
 extern crate lazy_static;
 
 const HELP: &str = concatdoc! {"
-    Usage: ", env!("CARGO_BIN_NAME"), " [options]
+    Usage: ", env!("CARGO_BIN_NAME"), " <command> [<args>]
 
-    Options:
-        import         Index command history for the current shell
-        delete_index   Remove all indexed command history
-
-    Developer Options:
-        search         Start a search client, the same as what's invoked from the keybind ^R
-        add            Write a command to the index (expects the format \"<exit code>:<command>\")
+    Commands:
+        import <shell> [<path>]   # Index command history for a shell (path defaults to ~/.zsh_history)
+        delete_index              # Remove all indexed command history
 
     Notes:
-        - Only Zsh is supported
-        - All persistent data is stored in ~/.fuzzy_matcher
+        - Only Zsh is currently supported
+        - All persistent data is stored in ~/.fzh
 
-    For setup and full documentation, see: https://github.com/pheen/fuzzy_history
+    For setup and full documentation, see: https://github.com/pheen/fzh
 "};
 
 fn indexable_command(text: &str) -> bool {
     lazy_static! {
-        static ref RE: Regex = Regex::new("\\d+:.*+").unwrap();
+        static ref RE: Regex = Regex::new("\\d+:[^\\s]+.*").unwrap();
     }
     RE.is_match(text)
 }
 
 use backtrace_on_stack_overflow;
+use std::io::{prelude::*, BufReader};
+
 
 fn main() -> std::io::Result<()> {
     unsafe { backtrace_on_stack_overflow::enable() };
@@ -68,10 +66,42 @@ fn main() -> std::io::Result<()> {
             let new_command = env::args().nth(2).unwrap_or("".to_string());
 
             if indexable_command(new_command.as_str()) {
-                index_command(new_command).unwrap();
+                let parts: Vec<&str> = new_command.trim().split(":").collect();
+                let exit_code = parts.get(0).unwrap().parse::<u64>().unwrap();
+                let command_input = parts.get(1).unwrap();
+                let index_path = build_index_path();
+
+                let schema = build_schema();
+
+                if !index_path.exists() {
+                    fs::create_dir_all(&index_path).unwrap();
+                }
+
+                let directory: Box<dyn Directory> = Box::new(MmapDirectory::open(index_path).unwrap());
+
+                let settings = IndexSettings {
+                    sort_by_field: Some(IndexSortByField {
+                        field: "timestamp".to_string(),
+                        order: Order::Desc,
+                    }),
+                    ..Default::default()
+                };
+                let mut index_builder = Index::builder().schema(schema.clone());
+                index_builder = index_builder.settings(settings);
+                let index = index_builder.open_or_create(directory).unwrap();
+
+                // let index = Index::open_or_create(directory, schema.clone()).unwrap();
+
+                let mut index_writer = index.writer(30_000_000).unwrap();
+                let current_dir = std::env::current_dir().unwrap().to_str().unwrap().to_string();
+
+                let document = index_command(current_dir, command_input.to_string(), &schema, &index, exit_code);
+
+                index_writer.add_document(document);
+                index_writer.commit().unwrap();
             } else {
-                println!("Indexing failed, the command does't match the pattern \"<exit code>:<command>\"");
-                println!("Failed input:{:#?}", new_command);
+                // println!("Indexing failed, the command does't match the pattern \"<exit code>:<command>\"");
+                // println!("Failed input:{:#?}", new_command);
                 std::process::exit(1);
             }
         }
@@ -86,16 +116,30 @@ fn main() -> std::io::Result<()> {
             }
         }
         "import" => {
-            // # Setup MCFLY_HISTFILE and make sure it exists.
-            // export MCFLY_HISTFILE="${HISTFILE:-$HOME/.zsh_history}"
-            // if [[ ! -r "${MCFLY_HISTFILE}" ]]; then
-            //   echo "McFly: ${MCFLY_HISTFILE} does not exist or is not readable. Please fix this or set HISTFILE to something else before using McFly."
-            //   return 1
-            // fi
+            let shell_type = env::args().nth(2).unwrap_or("".to_string());
+
+            if shell_type != "zsh" {
+                println!("A valid shell type is required. Only \"zsh\" is currently supported.");
+                std::process::exit(1);
+            }
+
+            let default_zsh_history_path = Path::new(&home_dir().unwrap()).join(".zsh_history").to_str().unwrap().to_string();
+            let zsh_history_string = env::args().nth(3).unwrap_or(default_zsh_history_path);
+            let zsh_history_path = Path::new(&zsh_history_string);
+
+            if !zsh_history_path.exists() && zsh_history_path.is_file() {
+                println!("Import failed, unable to find shell history path: {:#?}", zsh_history_path);
+                println!("Import usage: fzh import <shell> <shell history path>");
+                std::process::exit(1);
+            }
+
+            import_zsh_history(zsh_history_path);
+            println!("Import finished. Thanks for using Fzh, you're awesome! (ﾉ^_^)ﾉ❤️");
         }
         "delete_index" => {
             let index_path = build_index_path();
             fs::remove_dir_all(&index_path).unwrap();
+            println!("Deleted {:#?}", index_path);
         }
         _ => {
             print!("{}", HELP);
@@ -103,6 +147,68 @@ fn main() -> std::io::Result<()> {
     }
 
     std::process::exit(0);
+}
+
+fn import_zsh_history(zsh_history_path: &Path) {
+    // Open the file
+    let file = fs::File::open(zsh_history_path).unwrap();
+
+    // Create a BufReader to read the file line by line
+    let reader = BufReader::new(file);
+
+    let index_path = build_index_path();
+    let schema = build_schema();
+
+    if !index_path.exists() {
+        fs::create_dir_all(&index_path).unwrap();
+    }
+
+    let directory: Box<dyn Directory> = Box::new(MmapDirectory::open(index_path).unwrap());
+    let settings = IndexSettings {
+        sort_by_field: Some(IndexSortByField {
+            field: "timestamp".to_string(),
+            order: Order::Desc,
+        }),
+        ..Default::default()
+    };
+    let mut index_builder = Index::builder().schema(schema.clone());
+    index_builder = index_builder.settings(settings);
+    let index = index_builder.open_or_create(directory).unwrap();
+
+
+    // let index = Index::open_or_create(directory, schema.clone()).unwrap();
+
+    let mut index_writer = index.writer(30_000_000).unwrap();
+
+    // Iterate over the lines in the file
+    for line in reader.lines() {
+        // Process each line
+        match line {
+            Ok(line) => {
+                let re = Regex::new(r": (?P<timestamp>\d+):\d+;(?P<new_command>[^\\s]+.*)").unwrap();
+                if let Some(captures) = re.captures(line.as_str()) {
+                    let timestamp = captures.name("timestamp").unwrap().as_str();
+                    let new_command = captures.name("new_command").unwrap().as_str();
+                    let new_command = format!("{}:{}", timestamp, new_command);
+
+                    if new_command.trim().is_empty() {
+                        continue;
+                    }
+
+                    let parts: Vec<&str> = new_command.trim().split(":").collect();
+                    let exit_code = parts.get(0).unwrap().parse::<u64>().unwrap();
+                    let command_input = parts.get(1).unwrap();
+
+                    let document = index_command("".to_string(), command_input.to_string(), &schema, &index, exit_code);
+
+                    index_writer.add_document(document);
+                }
+            },
+            Err(e) => eprintln!("Error reading line: {}", e),
+        }
+    }
+
+    index_writer.commit().unwrap();
 }
 
 fn build_schema() -> Schema {
@@ -137,43 +243,10 @@ fn build_schema() -> Schema {
 }
 
 fn build_index_path() -> std::path::PathBuf {
-    Path::new(&home_dir().unwrap()).join(".fuzzy_history")
+    Path::new(&home_dir().unwrap()).join(".fzh")
 }
 
-fn index_command(text: String) -> std::io::Result<()> {
-    if text.trim().is_empty() {
-        return Ok(())
-    }
-
-    let parts: Vec<&str> = text.trim().split(":").collect();
-    let exit_code = parts.get(0).unwrap().parse::<u64>().unwrap();
-    let command_input = parts.get(1).unwrap();
-    let index_path = build_index_path();
-
-    let schema = build_schema();
-
-    if !index_path.exists() {
-        fs::create_dir_all(&index_path).unwrap();
-    }
-
-    let directory: Box<dyn Directory> = Box::new(MmapDirectory::open(index_path).unwrap());
-
-    let settings = IndexSettings {
-        sort_by_field: Some(IndexSortByField {
-            field: "timestamp".to_string(),
-            order: Order::Desc,
-        }),
-        ..Default::default()
-    };
-    let mut index_builder = Index::builder().schema(schema.clone());
-    index_builder = index_builder.settings(settings);
-    let index = index_builder.open_or_create(directory).unwrap();
-
-
-    // let index = Index::open_or_create(directory, schema.clone()).unwrap();
-
-    let mut index_writer = index.writer(30_000_000).unwrap();
-
+fn index_command(command_directory: String, new_command: String, schema: &Schema, index: &Index, exit_code: u64) -> Document {
     let id_field = schema.get_field("id").unwrap();
     let timestamp_field = schema.get_field("timestamp").unwrap();
     let times_selected_field = schema.get_field("times_selected").unwrap();
@@ -183,9 +256,7 @@ fn index_command(text: String) -> std::io::Result<()> {
 
     let mut command_doc = Document::default();
 
-    let dir_name = std::env::current_dir().unwrap();
-    let command_directory = dir_name.to_str().unwrap();
-    let combined_string = format!("{} {}", command_directory, command_input);
+    let combined_string = format!("{} {}", command_directory, new_command);
     let id_string = combined_string.as_str();
     let assigned_id = city::hash64(id_string);
 
@@ -225,13 +296,10 @@ fn index_command(text: String) -> std::io::Result<()> {
     command_doc.add_u64(timestamp_field, Ulid::new().timestamp_ms());
     command_doc.add_u64(times_selected_field, times_selected);
     command_doc.add_u64(exit_code_field, exit_code);
-    command_doc.add_text(command_field, command_input);
+    command_doc.add_text(command_field, new_command);
     command_doc.add_text(directory_field, command_directory);
 
-    index_writer.add_document(command_doc).unwrap();
-    index_writer.commit().unwrap();
-
-    Ok(())
+    command_doc
 }
 
 fn interactive_search_command(fd_path: String, text: String) -> std::io::Result<String> {
