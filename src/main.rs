@@ -561,12 +561,20 @@ impl FuzzyHistorySelect<'_> {
     }
 
     /// Like `interact` but allows a specific terminal to be set.
-    fn _interact_on(&mut self, fd_path: String, term: &Term, allow_quit: bool) -> io::Result<String> {
+    fn _interact_on(&mut self, fd_path: String, term2: &Term, allow_quit: bool) -> io::Result<String> {
+        let term2 = term2.clone();
+        let term = term2.clone();
+
+        ctrlc::set_handler(move || {
+            term2.show_cursor().unwrap();
+        })
+        .expect("Error setting Ctrl-C handler");
+
         // Place cursor at the end of the search term
         let mut position = self.initial_text.len();
         let mut search_term = self.initial_text.to_owned();
 
-        let mut render = TermThemeRenderer::new(term, self.theme);
+        let mut render = TermThemeRenderer::new(&term, self.theme);
         let mut sel = self.default;
 
         let mut size_vec = Vec::new();
