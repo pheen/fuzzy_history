@@ -58,5 +58,6 @@ Fzh includes a few developer options that can be used to add commands to the ind
 
 ## Remaining Work
 
+- [ ] Duplicates in command history.
 - [ ] Handle signals like cmd+backspace, cmd+left_arrow, etc.
 - [ ] Eat cake!
