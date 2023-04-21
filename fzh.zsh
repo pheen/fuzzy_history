@@ -46,6 +46,8 @@ if [[ -o interactive ]]; then # Check stdin is a tty
       # This echo causes the prompt to be hidden before running fzh. Using `zle
       # -I` works too, but it causes an additional prompt to be shown when
       # accepting a command.
+      #
+      # This does cause a new line to appear above the command unfortunately.
       echo ""
 
       local result=$($FZH_PATH search $TTY $BUFFER </dev/tty)
